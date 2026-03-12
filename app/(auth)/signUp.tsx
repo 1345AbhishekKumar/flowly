@@ -1,16 +1,74 @@
-import { useAuth, useSignUp } from '@clerk/expo'
+import { useAuth, useClerk, useSignIn, useSignUp } from '@clerk/expo'
 import { type Href, Link, useRouter } from 'expo-router'
+import { LinearGradient } from 'expo-linear-gradient'
 import React from 'react'
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import {
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+} from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
+import * as WebBrowser from 'expo-web-browser'
 
 export default function Page() {
     const { signUp, errors, fetchStatus } = useSignUp()
+    const { signIn: signInObj } = useSignIn()
+    const { setActive } = useClerk()
     const { isSignedIn } = useAuth()
     const router = useRouter()
 
     const [emailAddress, setEmailAddress] = React.useState('')
     const [password, setPassword] = React.useState('')
     const [code, setCode] = React.useState('')
+    const [socialLoading, setSocialLoading] = React.useState<string | null>(null)
+
+    // Handle OAuth social login (uses signIn SSO — Clerk auto-creates account if new user)
+    const handleSocialLogin = async (strategy: 'oauth_google' | 'oauth_apple') => {
+        try {
+            setSocialLoading(strategy)
+
+            const { error } = await signInObj.sso({
+                strategy,
+                redirectUrl: '/(auth)/sso-callback',
+                redirectCallbackUrl: '/',
+            })
+
+            if (error) {
+                console.error(JSON.stringify(error, null, 2))
+                Alert.alert('Error', 'Something went wrong with social login. Please try again.')
+                return
+            }
+
+            // Get the verification URL and open it in the browser
+            const verification = signInObj.firstFactorVerification
+            if (verification?.externalVerificationRedirectURL) {
+                const result = await WebBrowser.openAuthSessionAsync(
+                    verification.externalVerificationRedirectURL.toString(),
+                    'exp://'
+                )
+
+                if (result.type === 'success') {
+                    if (signInObj.status === 'complete' && signInObj.createdSessionId) {
+                        await setActive({ session: signInObj.createdSessionId })
+                        router.replace('/(home)' as Href)
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Social login error:', err)
+            Alert.alert('Error', 'Failed to start social login. Please try again.')
+        } finally {
+            setSocialLoading(null)
+        }
+    }
 
     const handleSubmit = async () => {
         const { error } = await signUp.password({
@@ -64,157 +122,366 @@ export default function Page() {
         signUp.missingFields.length === 0
     ) {
         return (
-            <View style={styles.container}>
-                <Text style={[styles.title, { fontSize: 24, fontWeight: 'bold' }]}>
-                    Verify your account
-                </Text>
-                <TextInput
-                    style={styles.input}
-                    value={code}
-                    placeholder="Enter your verification code"
-                    placeholderTextColor="#666666"
-                    onChangeText={(code) => setCode(code)}
-                    keyboardType="numeric"
-                />
-                {errors.fields.code && <Text style={styles.error}>{errors.fields.code.message}</Text>}
-                <Pressable
-                    style={({ pressed }) => [
-                        styles.button,
-                        fetchStatus === 'fetching' && styles.buttonDisabled,
-                        pressed && styles.buttonPressed,
-                    ]}
-                    onPress={handleVerify}
-                    disabled={fetchStatus === 'fetching'}
+            <SafeAreaView style={styles.safeArea}>
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    style={styles.keyboardView}
                 >
-                    <Text style={styles.buttonText}>Verify</Text>
-                </Pressable>
-                <Pressable
-                    style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
-                    onPress={() => signUp.verifications.sendEmailCode()}
-                >
-                    <Text style={styles.secondaryButtonText}>I need a new code</Text>
-                </Pressable>
-            </View>
+                    <ScrollView
+                        contentContainerStyle={styles.scrollContent}
+                        keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator={false}
+                    >
+                        {/* Header */}
+                        <View style={styles.header}>
+                            <View style={styles.logoContainer}>
+                                <Ionicons name="bar-chart-outline" size={32} color="#2dd4bf" />
+                            </View>
+                            <Text style={styles.appTitle}>NutriTrack AI</Text>
+                            <Text style={styles.appSubtitle}>Verify your identity</Text>
+                        </View>
+
+                        {/* Verification Form */}
+                        <View style={styles.formSection}>
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.label}>Verification Code</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={code}
+                                    placeholder="Enter your verification code"
+                                    placeholderTextColor="#94a3b8"
+                                    onChangeText={(code) => setCode(code)}
+                                    keyboardType="numeric"
+                                />
+                            </View>
+                            {errors.fields.code && <Text style={styles.error}>{errors.fields.code.message}</Text>}
+
+                            <Pressable
+                                style={({ pressed }) => [
+                                    styles.buttonWrapper,
+                                    fetchStatus === 'fetching' && styles.buttonDisabled,
+                                    pressed && styles.buttonPressed,
+                                ]}
+                                onPress={handleVerify}
+                                disabled={fetchStatus === 'fetching'}
+                            >
+                                <LinearGradient
+                                    colors={['#34d399', '#2dd4bf']}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 0 }}
+                                    style={styles.gradientButton}
+                                >
+                                    <Text style={styles.buttonText}>Verify</Text>
+                                </LinearGradient>
+                            </Pressable>
+
+                            <Pressable
+                                style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+                                onPress={() => signUp.verifications.sendEmailCode()}
+                            >
+                                <Text style={styles.secondaryButtonText}>I need a new code</Text>
+                            </Pressable>
+                        </View>
+                    </ScrollView>
+                </KeyboardAvoidingView>
+            </SafeAreaView>
         )
     }
 
     return (
-        <View style={styles.container}>
-            <Text style={[styles.title, { fontSize: 24, fontWeight: 'bold' }]}>Sign up</Text>
-            <Text style={styles.label}>Email address</Text>
-            <TextInput
-                style={styles.input}
-                autoCapitalize="none"
-                value={emailAddress}
-                placeholder="Enter email"
-                placeholderTextColor="#666666"
-                onChangeText={(emailAddress) => setEmailAddress(emailAddress)}
-                keyboardType="email-address"
-            />
-            {errors.fields.emailAddress && (
-                <Text style={styles.error}>{errors.fields.emailAddress.message}</Text>
-            )}
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-                style={styles.input}
-                value={password}
-                placeholder="Enter password"
-                placeholderTextColor="#666666"
-                secureTextEntry={true}
-                onChangeText={(password) => setPassword(password)}
-            />
-            {errors.fields.password && <Text style={styles.error}>{errors.fields.password.message}</Text>}
-            <Pressable
-                style={({ pressed }) => [
-                    styles.button,
-                    (!emailAddress || !password || fetchStatus === 'fetching') && styles.buttonDisabled,
-                    pressed && styles.buttonPressed,
-                ]}
-                onPress={handleSubmit}
-                disabled={!emailAddress || !password || fetchStatus === 'fetching'}
+        <SafeAreaView style={styles.safeArea}>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={styles.keyboardView}
             >
-                <Text style={styles.buttonText}>Sign up</Text>
-            </Pressable>
-            {/* For your debugging purposes. You can just console.log errors, but we put them in the UI for convenience */}
-            {errors && <Text style={styles.debug}>{JSON.stringify(errors, null, 2)}</Text>}
+                <ScrollView
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                >
+                    {/* Background Decorative Elements */}
+                    <View style={styles.decorativeRing} pointerEvents="none" />
 
-            <View style={styles.linkContainer}>
-                <Text>Already have an account? </Text>
-                <Link href="/signIn">
-                    <Text style={{ color: '#0a7ea4' }}>Sign in</Text>
-                </Link>
-            </View>
+                    {/* Header */}
+                    <View style={styles.header}>
+                        <View style={styles.logoContainer}>
+                            <Ionicons name="bar-chart-outline" size={32} color="#2dd4bf" />
+                        </View>
+                        <Text style={styles.appTitle}>NutriTrack AI</Text>
+                        <Text style={styles.appSubtitle}>Precision nutrition for peak performance</Text>
+                    </View>
 
-            {/* Required for sign-up flows. Clerk's bot sign-up protection is enabled by default */}
-            <View nativeID="clerk-captcha" />
-        </View>
+                    {/* Sign Up Form */}
+                    <View style={styles.formSection}>
+                        {/* Email Input */}
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>Email Address</Text>
+                            <TextInput
+                                style={styles.input}
+                                autoCapitalize="none"
+                                value={emailAddress}
+                                placeholder="name@example.com"
+                                placeholderTextColor="#94a3b8"
+                                onChangeText={(emailAddress) => setEmailAddress(emailAddress)}
+                                keyboardType="email-address"
+                            />
+                        </View>
+                        {errors.fields.emailAddress && (
+                            <Text style={styles.error}>{errors.fields.emailAddress.message}</Text>
+                        )}
+
+                        {/* Password Input */}
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>Password</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={password}
+                                placeholder="••••••••"
+                                placeholderTextColor="#94a3b8"
+                                secureTextEntry={true}
+                                onChangeText={(password) => setPassword(password)}
+                            />
+                        </View>
+                        {errors.fields.password && <Text style={styles.error}>{errors.fields.password.message}</Text>}
+
+                        {/* Submit Button */}
+                        <Pressable
+                            style={({ pressed }) => [
+                                styles.buttonWrapper,
+                                (!emailAddress || !password || fetchStatus === 'fetching') && styles.buttonDisabled,
+                                pressed && styles.buttonPressed,
+                            ]}
+                            onPress={handleSubmit}
+                            disabled={!emailAddress || !password || fetchStatus === 'fetching'}
+                        >
+                            <LinearGradient
+                                colors={['#34d399', '#2dd4bf']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={styles.gradientButton}
+                            >
+                                <Text style={styles.buttonText}>Create Account</Text>
+                            </LinearGradient>
+                        </Pressable>
+
+                        {/* Divider */}
+                        <View style={styles.dividerContainer}>
+                            <View style={styles.dividerLine} />
+                            <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
+                            <View style={styles.dividerLine} />
+                        </View>
+
+                        {/* Social Buttons */}
+                        <View style={styles.socialRow}>
+                            <Pressable
+                                style={({ pressed }) => [styles.socialButton, pressed && { backgroundColor: '#f8fafc' }]}
+                                onPress={() => handleSocialLogin('oauth_google')}
+                                disabled={socialLoading !== null}
+                            >
+                                {socialLoading === 'oauth_google' ? (
+                                    <ActivityIndicator size="small" color="#4285F4" />
+                                ) : (
+                                    <Ionicons name="logo-google" size={20} color="#4285F4" />
+                                )}
+                            </Pressable>
+                            <Pressable
+                                style={({ pressed }) => [styles.socialButton, pressed && { backgroundColor: '#f8fafc' }]}
+                                onPress={() => handleSocialLogin('oauth_apple')}
+                                disabled={socialLoading !== null}
+                            >
+                                {socialLoading === 'oauth_apple' ? (
+                                    <ActivityIndicator size="small" color="#000000" />
+                                ) : (
+                                    <Ionicons name="logo-apple" size={22} color="#000000" />
+                                )}
+                            </Pressable>
+                        </View>
+                    </View>
+
+                    {/* Footer */}
+                    <View style={styles.footer}>
+                        <Text style={styles.footerText}>Already have an account? </Text>
+                        <Link href="/signIn">
+                            <Text style={styles.footerLink}>Sign In</Text>
+                        </Link>
+                    </View>
+
+                    {/* Required for sign-up flows. Clerk's bot sign-up protection is enabled by default */}
+                    <View nativeID="clerk-captcha" />
+                </ScrollView>
+            </KeyboardAvoidingView>
+        </SafeAreaView>
     )
 }
 
 const styles = StyleSheet.create({
-    container: {
+    safeArea: {
         flex: 1,
-        padding: 20,
-        gap: 12,
+        backgroundColor: '#ffffff',
     },
-    title: {
-        marginBottom: 8,
+    keyboardView: {
+        flex: 1,
+    },
+    scrollContent: {
+        flexGrow: 1,
+        justifyContent: 'center',
+        paddingHorizontal: 32,
+        paddingTop: 20,
+        paddingBottom: 40,
+    },
+    decorativeRing: {
+        position: 'absolute',
+        top: -60,
+        right: -80,
+        width: 260,
+        height: 260,
+        borderRadius: 130,
+        borderWidth: 35,
+        borderColor: 'rgba(45, 212, 191, 0.06)',
+    },
+    header: {
+        alignItems: 'center',
+        marginBottom: 36,
+    },
+    logoContainer: {
+        width: 64,
+        height: 64,
+        borderRadius: 16,
+        backgroundColor: '#ffffff',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        elevation: 3,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
+    },
+    appTitle: {
+        fontSize: 28,
+        fontWeight: '800',
+        color: '#1e293b',
+        letterSpacing: -0.5,
+    },
+    appSubtitle: {
+        fontSize: 15,
+        color: '#64748b',
+        marginTop: 6,
+        fontWeight: '500',
+    },
+    formSection: {
+        width: '100%',
+        gap: 16,
+    },
+    inputGroup: {
+        gap: 6,
     },
     label: {
-        fontWeight: '600',
         fontSize: 14,
+        fontWeight: '600',
+        color: '#334155',
+        marginLeft: 4,
     },
     input: {
+        width: '100%',
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
         borderWidth: 1,
-        borderColor: '#ccc',
-        borderRadius: 8,
-        padding: 12,
+        borderColor: '#e2e8f0',
+        borderRadius: 12,
         fontSize: 16,
-        backgroundColor: '#fff',
+        color: '#1e293b',
     },
-    button: {
-        backgroundColor: '#0a7ea4',
-        paddingVertical: 12,
-        paddingHorizontal: 24,
-        borderRadius: 8,
+    buttonWrapper: {
+        borderRadius: 12,
+        overflow: 'hidden',
+        shadowColor: '#2dd4bf',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 12,
+        elevation: 5,
+    },
+    gradientButton: {
+        paddingVertical: 16,
         alignItems: 'center',
-        marginTop: 8,
     },
     buttonPressed: {
         opacity: 0.7,
+        transform: [{ scale: 0.98 }],
     },
     buttonDisabled: {
         opacity: 0.5,
     },
     buttonText: {
-        color: '#fff',
-        fontWeight: '600',
+        color: '#ffffff',
+        fontSize: 17,
+        fontWeight: '700',
     },
     secondaryButton: {
-        paddingVertical: 12,
-        paddingHorizontal: 24,
-        borderRadius: 8,
+        paddingVertical: 14,
+        borderRadius: 12,
         alignItems: 'center',
-        marginTop: 8,
+        marginTop: 4,
     },
     secondaryButtonText: {
-        color: '#0a7ea4',
+        color: '#2dd4bf',
         fontWeight: '600',
+        fontSize: 15,
     },
-    linkContainer: {
+    dividerContainer: {
         flexDirection: 'row',
-        gap: 4,
-        marginTop: 12,
         alignItems: 'center',
+        marginTop: 12,
+        marginBottom: 4,
+    },
+    dividerLine: {
+        flex: 1,
+        height: 1,
+        backgroundColor: '#e2e8f0',
+    },
+    dividerText: {
+        paddingHorizontal: 16,
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#94a3b8',
+        letterSpacing: 1.5,
+    },
+    socialRow: {
+        flexDirection: 'row',
+        gap: 16,
+    },
+    socialButton: {
+        flex: 1,
+        paddingVertical: 14,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        backgroundColor: '#ffffff',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    footer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 36,
+    },
+    footerText: {
+        fontSize: 14,
+        color: '#64748b',
+    },
+    footerLink: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#2dd4bf',
     },
     error: {
-        color: '#d32f2f',
+        color: '#ef4444',
         fontSize: 12,
         marginTop: -8,
-    },
-    debug: {
-        fontSize: 10,
-        opacity: 0.5,
-        marginTop: 8,
+        marginLeft: 4,
     },
 })
