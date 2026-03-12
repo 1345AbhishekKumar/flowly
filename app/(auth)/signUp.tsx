@@ -1,4 +1,5 @@
-import { useAuth, useClerk, useSignIn, useSignUp } from '@clerk/expo'
+import { useAuth, useClerk, useSignIn, useSignUp, useOAuth } from '@clerk/expo'
+import * as Linking from 'expo-linking'
 import { type Href, Link, useRouter } from 'expo-router'
 import { LinearGradient } from 'expo-linear-gradient'
 import React from 'react'
@@ -18,12 +19,27 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import * as WebBrowser from 'expo-web-browser'
 
+export const useWarmUpBrowser = () => {
+    React.useEffect(() => {
+        void WebBrowser.warmUpAsync()
+        return () => {
+            void WebBrowser.coolDownAsync()
+        }
+    }, [])
+}
+
+WebBrowser.maybeCompleteAuthSession()
+
 export default function Page() {
+    useWarmUpBrowser()
     const { signUp, errors, fetchStatus } = useSignUp()
     const { signIn: signInObj } = useSignIn()
     const { setActive } = useClerk()
     const { isSignedIn } = useAuth()
     const router = useRouter()
+
+    const { startOAuthFlow: startGoogleOAuthFlow } = useOAuth({ strategy: 'oauth_google' })
+    const { startOAuthFlow: startAppleOAuthFlow } = useOAuth({ strategy: 'oauth_apple' })
 
     const [emailAddress, setEmailAddress] = React.useState('')
     const [password, setPassword] = React.useState('')
@@ -35,32 +51,18 @@ export default function Page() {
         try {
             setSocialLoading(strategy)
 
-            const { error } = await signInObj.sso({
-                strategy,
-                redirectUrl: '/(auth)/sso-callback',
-                redirectCallbackUrl: '/',
+            const startOAuthFlow =
+                strategy === 'oauth_google' ? startGoogleOAuthFlow : startAppleOAuthFlow
+
+            const { createdSessionId, setActive: setOAuthActive } = await startOAuthFlow({
+                redirectUrl: Linking.createURL('/(home)'),
             })
 
-            if (error) {
-                console.error(JSON.stringify(error, null, 2))
-                Alert.alert('Error', 'Something went wrong with social login. Please try again.')
-                return
-            }
-
-            // Get the verification URL and open it in the browser
-            const verification = signInObj.firstFactorVerification
-            if (verification?.externalVerificationRedirectURL) {
-                const result = await WebBrowser.openAuthSessionAsync(
-                    verification.externalVerificationRedirectURL.toString(),
-                    'exp://'
-                )
-
-                if (result.type === 'success') {
-                    if (signInObj.status === 'complete' && signInObj.createdSessionId) {
-                        await setActive({ session: signInObj.createdSessionId })
-                        router.replace('/(home)' as Href)
-                    }
-                }
+            if (createdSessionId) {
+                await setOAuthActive!({ session: createdSessionId })
+                router.replace('/(home)' as Href)
+            } else {
+                // Use signIn or signUp for next steps such as MFA
             }
         } catch (err) {
             console.error('Social login error:', err)
