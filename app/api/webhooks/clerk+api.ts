@@ -86,6 +86,23 @@ export async function POST(req: Request) {
     return new Response(JSON.stringify({ success: true, user: data }), { status: 200 });
   }
 
+  if (eventType === 'user.deleted') {
+    const { id: clerk_id } = evt.data;
+
+    // Delete from Supabase
+    const { error } = await supabaseAdmin
+      .from('users')
+      .delete()
+      .eq('clerk_id', clerk_id);
+
+    if (error) {
+      console.error('Error deleting user from Supabase:', error);
+      return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    }
+
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  }
+
   // Acknowledge other event types without error
   return new Response('', { status: 200 });
 }
