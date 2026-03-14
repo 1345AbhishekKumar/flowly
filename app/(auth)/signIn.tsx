@@ -71,75 +71,83 @@ export default function Page() {
     }
 
     const handleSubmit = async () => {
-        const { error } = await signIn.password({
-            emailAddress,
-            password,
-        })
-        if (error) {
-            console.error(JSON.stringify(error, null, 2))
-            return
-        }
-
-        if (signIn.status === 'complete') {
-            await signIn.finalize({
-                navigate: ({ session, decorateUrl }) => {
-                    if (session?.currentTask) {
-                        // Handle pending session tasks
-                        // See https://clerk.com/docs/guides/development/custom-flows/authentication/session-tasks
-                        console.log(session?.currentTask)
-                        return
-                    }
-
-                    const url = decorateUrl('/')
-                    if (url.startsWith('http')) {
-                        window.location.href = url
-                    } else {
-                        router.push(url as Href)
-                    }
-                },
+        try {
+            const { error } = await signIn.password({
+                emailAddress,
+                password,
             })
-        } else if (signIn.status === 'needs_second_factor' || signIn.status === 'needs_client_trust') {
-            // Handle second factor or client trust verification
-            // For other second factor strategies,
-            // see https://clerk.com/docs/guides/development/custom-flows/authentication/multi-factor-authentication
-            // see https://clerk.com/docs/guides/development/custom-flows/authentication/client-trust
-            const emailCodeFactor = signIn.supportedSecondFactors.find(
-                (factor) => factor.strategy === 'email_code',
-            )
-
-            if (emailCodeFactor) {
-                await signIn.mfa.sendEmailCode()
+            if (error) {
+                console.error(JSON.stringify(error, null, 2))
+                return
             }
-        } else {
-            // Check why the sign-in is not complete
-            console.error('Sign-in attempt not complete:', signIn)
+
+            if (signIn.status === 'complete') {
+                await signIn.finalize({
+                    navigate: ({ session, decorateUrl }) => {
+                        if (session?.currentTask) {
+                            // Handle pending session tasks
+                            // See https://clerk.com/docs/guides/development/custom-flows/authentication/session-tasks
+                            console.log(session?.currentTask)
+                            return
+                        }
+
+                        const url = decorateUrl('/')
+                        if (url.startsWith('http')) {
+                            window.location.href = url
+                        } else {
+                            router.push(url as Href)
+                        }
+                    },
+                })
+            } else if (signIn.status === 'needs_second_factor' || signIn.status === 'needs_client_trust') {
+                // Handle second factor or client trust verification
+                // For other second factor strategies,
+                // see https://clerk.com/docs/guides/development/custom-flows/authentication/multi-factor-authentication
+                // see https://clerk.com/docs/guides/development/custom-flows/authentication/client-trust
+                const emailCodeFactor = signIn.supportedSecondFactors.find(
+                    (factor) => factor.strategy === 'email_code',
+                )
+
+                if (emailCodeFactor) {
+                    await signIn.mfa.sendEmailCode()
+                }
+            } else {
+                // Check why the sign-in is not complete
+                console.error('Sign-in attempt not complete:', signIn)
+            }
+        } catch (err: any) {
+            console.error('Sign in error:', JSON.stringify(err, null, 2))
         }
     }
 
     const handleVerify = async () => {
-        await signIn.mfa.verifyEmailCode({ code })
+        try {
+            await signIn.mfa.verifyEmailCode({ code })
 
-        if (signIn.status === 'complete') {
-            await signIn.finalize({
-                navigate: ({ session, decorateUrl }) => {
-                    if (session?.currentTask) {
-                        // Handle pending session tasks
-                        // See https://clerk.com/docs/guides/development/custom-flows/authentication/session-tasks
-                        console.log(session?.currentTask)
-                        return
-                    }
+            if (signIn.status === 'complete') {
+                await signIn.finalize({
+                    navigate: ({ session, decorateUrl }) => {
+                        if (session?.currentTask) {
+                            // Handle pending session tasks
+                            // See https://clerk.com/docs/guides/development/custom-flows/authentication/session-tasks
+                            console.log(session?.currentTask)
+                            return
+                        }
 
-                    const url = decorateUrl('/')
-                    if (url.startsWith('http')) {
-                        window.location.href = url
-                    } else {
-                        router.push(url as Href)
-                    }
-                },
-            })
-        } else {
-            // Check why the sign-in is not complete
-            console.error('Sign-in attempt not complete:', signIn)
+                        const url = decorateUrl('/')
+                        if (url.startsWith('http')) {
+                            window.location.href = url
+                        } else {
+                            router.push(url as Href)
+                        }
+                    },
+                })
+            } else {
+                // Check why the sign-in is not complete
+                console.error('Sign-in attempt not complete:', signIn)
+            }
+        } catch (err: any) {
+            console.error('Verification error:', JSON.stringify(err, null, 2))
         }
     }
 
@@ -200,7 +208,13 @@ export default function Page() {
 
                             <Pressable
                                 style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
-                                onPress={() => signIn.mfa.sendEmailCode()}
+                                onPress={async () => {
+                                    try {
+                                        await signIn.mfa.sendEmailCode()
+                                    } catch (err: any) {
+                                        console.error('Error sending code:', JSON.stringify(err, null, 2))
+                                    }
+                                }}
                             >
                                 <Text style={styles.secondaryButtonText}>I need a new code</Text>
                             </Pressable>

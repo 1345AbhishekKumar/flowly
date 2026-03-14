@@ -1,11 +1,12 @@
 import { Show, useUser } from '@clerk/expo'
 import { useClerk } from '@clerk/expo'
-import { Link } from 'expo-router'
+import { Link, useRouter } from 'expo-router'
 import { Text, View, Pressable, StyleSheet } from 'react-native'
 
 export default function Page() {
     const { user } = useUser()
     const { signOut } = useClerk()
+    const router = useRouter()
 
     return (
         <View style={styles.container}>
@@ -20,6 +21,14 @@ export default function Page() {
             </Show>
             <Show when="signed-in">
                 <Text>Hello {user?.emailAddresses[0].emailAddress}</Text>
+                
+                <Pressable 
+                  style={[styles.button, { backgroundColor: '#ec5b13', marginTop: 24 }]} 
+                  onPress={() => router.push('/(tabs)' as any)}
+                >
+                    <Text style={styles.buttonText}>Launch NutriTrack</Text>
+                </Pressable>
+
                 <Pressable style={styles.button} onPress={() => signOut()}>
                     <Text style={styles.buttonText}>Sign out</Text>
                 </Pressable>

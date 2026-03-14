@@ -73,44 +73,52 @@ export default function Page() {
     }
 
     const handleSubmit = async () => {
-        const { error } = await signUp.password({
-            emailAddress,
-            password,
-        })
-        if (error) {
-            console.error(JSON.stringify(error, null, 2))
-            return
-        }
+        try {
+            const { error } = await signUp.password({
+                emailAddress,
+                password,
+            })
+            if (error) {
+                console.error(JSON.stringify(error, null, 2))
+                return
+            }
 
-        if (!error) await signUp.verifications.sendEmailCode()
+            if (!error) await signUp.verifications.sendEmailCode()
+        } catch (err: any) {
+            console.error('Sign up error:', JSON.stringify(err, null, 2))
+        }
     }
 
     const handleVerify = async () => {
-        await signUp.verifications.verifyEmailCode({
-            code,
-        })
-        if (signUp.status === 'complete') {
-            await signUp.finalize({
-                // Redirect the user to the home page after signing up
-                navigate: ({ session, decorateUrl }) => {
-                    if (session?.currentTask) {
-                        // Handle pending session tasks
-                        // See https://clerk.com/docs/guides/development/custom-flows/authentication/session-tasks
-                        console.log(session?.currentTask)
-                        return
-                    }
-
-                    const url = decorateUrl('/')
-                    if (url.startsWith('http')) {
-                        window.location.href = url
-                    } else {
-                        router.push(url as Href)
-                    }
-                },
+        try {
+            await signUp.verifications.verifyEmailCode({
+                code,
             })
-        } else {
-            // Check why the sign-up is not complete
-            console.error('Sign-up attempt not complete:', signUp)
+            if (signUp.status === 'complete') {
+                await signUp.finalize({
+                    // Redirect the user to the home page after signing up
+                    navigate: ({ session, decorateUrl }) => {
+                        if (session?.currentTask) {
+                            // Handle pending session tasks
+                            // See https://clerk.com/docs/guides/development/custom-flows/authentication/session-tasks
+                            console.log(session?.currentTask)
+                            return
+                        }
+
+                        const url = decorateUrl('/')
+                        if (url.startsWith('http')) {
+                            window.location.href = url
+                        } else {
+                            router.push(url as Href)
+                        }
+                    },
+                })
+            } else {
+                // Check why the sign-up is not complete
+                console.error('Sign-up attempt not complete:', signUp)
+            }
+        } catch (err: any) {
+            console.error('Verification error:', JSON.stringify(err, null, 2))
         }
     }
 
@@ -179,7 +187,13 @@ export default function Page() {
 
                             <Pressable
                                 style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
-                                onPress={() => signUp.verifications.sendEmailCode()}
+                                onPress={async () => {
+                                    try {
+                                        await signUp.verifications.sendEmailCode()
+                                    } catch (err: any) {
+                                        console.error('Error sending code:', JSON.stringify(err, null, 2))
+                                    }
+                                }}
                             >
                                 <Text style={styles.secondaryButtonText}>I need a new code</Text>
                             </Pressable>

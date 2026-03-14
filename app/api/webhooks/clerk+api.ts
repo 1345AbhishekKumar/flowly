@@ -67,23 +67,28 @@ export async function POST(req: Request) {
     const name = [first_name, last_name].filter(Boolean).join(' ');
 
     // Upsert to Supabase
-    const { data, error } = await supabaseAdmin
-      .from('users')
-      .upsert({
-        clerk_id: clerk_id,
-        email: email,
-        name: name,
-        profile_image: image_url,
-      }, { onConflict: 'clerk_id' })
-      .select()
-      .single();
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .upsert({
+          clerk_id: clerk_id,
+          email: email,
+          name: name,
+          profile_image: image_url,
+        }, { onConflict: 'clerk_id' })
+        .select()
+        .single();
 
-    if (error) {
-      console.error('Error syncing user to Supabase:', error);
-      return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+      if (error) {
+        console.error('Error syncing user to Supabase:', error);
+        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+      }
+
+      return new Response(JSON.stringify({ success: true, user: data }), { status: 200 });
+    } catch (err: any) {
+      console.error('Unexpected error syncing user:', err);
+      return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 });
     }
-
-    return new Response(JSON.stringify({ success: true, user: data }), { status: 200 });
   }
 
   if (eventType === 'user.deleted') {
@@ -95,25 +100,30 @@ export async function POST(req: Request) {
     }
 
     // Delete from Supabase. We add .select() to return the deleted row.
-    const { data, error } = await supabaseAdmin
-      .from('users')
-      .delete()
-      .eq('clerk_id', clerk_id)
-      .select();
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .delete()
+        .eq('clerk_id', clerk_id)
+        .select();
 
-    if (error) {
-      console.error('Error deleting user from Supabase:', error);
-      return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+      if (error) {
+        console.error('Error deleting user from Supabase:', error);
+        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+      }
+
+      // If data is empty, it means no row matched the clerk_id
+      if (!data || data.length === 0) {
+        console.warn(`Webhook received user.deleted for clerk_id ${clerk_id}, but no matching user was found in Supabase.`);
+        return new Response(JSON.stringify({ success: true, message: 'No matching user found' }), { status: 200 });
+      }
+
+      console.log(`Successfully deleted user ${clerk_id} from Supabase.`);
+      return new Response(JSON.stringify({ success: true, deletedData: data }), { status: 200 });
+    } catch (err: any) {
+      console.error('Unexpected error deleting user:', err);
+      return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 });
     }
-
-    // If data is empty, it means no row matched the clerk_id
-    if (!data || data.length === 0) {
-      console.warn(`Webhook received user.deleted for clerk_id ${clerk_id}, but no matching user was found in Supabase.`);
-      return new Response(JSON.stringify({ success: true, message: 'No matching user found' }), { status: 200 });
-    }
-
-    console.log(`Successfully deleted user ${clerk_id} from Supabase.`);
-    return new Response(JSON.stringify({ success: true, deletedData: data }), { status: 200 });
   }
 
   // Acknowledge other event types without error
