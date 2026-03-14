@@ -89,18 +89,31 @@ export async function POST(req: Request) {
   if (eventType === 'user.deleted') {
     const { id: clerk_id } = evt.data;
 
-    // Delete from Supabase
-    const { error } = await supabaseAdmin
+    if (!clerk_id) {
+      console.error('No ID provided in the user.deleted event');
+      return new Response('Error: No User ID', { status: 400 });
+    }
+
+    // Delete from Supabase. We add .select() to return the deleted row.
+    const { data, error } = await supabaseAdmin
       .from('users')
       .delete()
-      .eq('clerk_id', clerk_id);
+      .eq('clerk_id', clerk_id)
+      .select();
 
     if (error) {
       console.error('Error deleting user from Supabase:', error);
       return new Response(JSON.stringify({ error: error.message }), { status: 500 });
     }
 
-    return new Response(JSON.stringify({ success: true }), { status: 200 });
+    // If data is empty, it means no row matched the clerk_id
+    if (!data || data.length === 0) {
+      console.warn(`Webhook received user.deleted for clerk_id ${clerk_id}, but no matching user was found in Supabase.`);
+      return new Response(JSON.stringify({ success: true, message: 'No matching user found' }), { status: 200 });
+    }
+
+    console.log(`Successfully deleted user ${clerk_id} from Supabase.`);
+    return new Response(JSON.stringify({ success: true, deletedData: data }), { status: 200 });
   }
 
   // Acknowledge other event types without error
